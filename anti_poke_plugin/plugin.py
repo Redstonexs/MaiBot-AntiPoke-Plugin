@@ -60,7 +60,7 @@ class AntiPokePlugin(BasePlugin):
     # 配置Schema定义
     config_schema = {
         "plugin": {
-            "config_version": ConfigField(type=str, default="0.5.0", description="插件配置文件版本号"),
+            "config_version": ConfigField(type=str, default="0.6.0", description="插件配置文件版本号"),
             "enabled": ConfigField(type=bool, default=True, description="是否启用插件"),
         },
         "components": {
@@ -196,8 +196,15 @@ class AntiPokeCommand(BaseCommand):
                 _POKE_STATE['last_poke_back_time'] = current_time  # 更新上次反戳时间
                 return True,"反戳一下"
             else:
-                await self.generate_reply(content, suffix, target_id)
-                return True,"选择言语回复"
+                if not can_poke_back:
+                    if random.random() < 0.33:
+                        await self.generate_reply(content, suffix, target_id)
+                        return True,"选择言语回复"
+                    else:
+                        return False,"不想回复"
+                else:
+                    await self.generate_reply(content, suffix, target_id)
+                    return True,"选择言语回复"
             
         except Exception as e:
             logger.error(f"{self.log_prefix} 执行错误: {e}")
