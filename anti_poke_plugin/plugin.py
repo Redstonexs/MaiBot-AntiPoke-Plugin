@@ -3,6 +3,7 @@ from src.plugin_system.base.config_types import ConfigField
 from src.plugin_system.base.component_types import ComponentInfo
 from src.plugin_system.base.base_command import BaseCommand
 from src.plugin_system.apis import generator_api
+from src.plugin_system.apis import config_api
 from src.common.logger import get_logger
 from typing import Tuple, Optional, Dict, Any, List, Type
 import random
@@ -60,7 +61,7 @@ class AntiPokePlugin(BasePlugin):
     # 配置Schema定义
     config_schema = {
         "plugin": {
-            "config_version": ConfigField(type=str, default="0.6.0", description="插件配置文件版本号"),
+            "config_version": ConfigField(type=str, default="0.9.0", description="插件配置文件版本号"),
             "enabled": ConfigField(type=bool, default=True, description="是否启用插件"),
         },
         "components": {
@@ -72,7 +73,8 @@ class AntiPokePlugin(BasePlugin):
             "min_slience_counts": ConfigField(type=int, default = 5, description="沉默需要被戳的最小次数"),
             "max_slience_counts": ConfigField(type=int, default = 9, description="沉默需要被戳的最大次数"),
             "counts_decay_interval": ConfigField(type=int, default = 150, description="被戳次数的递减间隔，单位为秒"),
-            "poke_probility": ConfigField(type=float, default = 0.3, description="戳回去的概率，取值0到1之间任意小数。注意，不反戳就会正常回复"),
+            "reflect_probility": ConfigField(type=float, default = 0.4, description="戳回去的概率，取值0到1之间任意小数。注意，不反戳就会正常回复"),
+            "follow_probility": ConfigField(type=float, default = 0.3, description="跟戳的概率，取值0到1之间任意小数。"),
         },
         "logging": {
             "level": ConfigField(
@@ -131,14 +133,19 @@ class AntiPokeCommand(BaseCommand):
         return config["poke_value"].get("counts_decay_interval", 180)
     
     @property
-    def POKE_PROBILITY(self):
+    def REFLECT_POKE_PROBILITY(self):
         config = self._load_config()
-        return config["poke_value"].get("poke_probility", 0.3)
+        return config["poke_value"].get("reflect_probility", 0.3)
+    
+    @property
+    def FOLLOW_POKE_PROBILITY(self):
+        config = self._load_config()
+        return config["poke_value"].get("follow_probility", 0.3)
 
     async def execute(self) -> Tuple[bool, Optional[str]]:
         try:
+            current_time = time.time()
             if _POKE_STATE['is_silent']: # 沉默截断机制
-                current_time = time.time()
                 if current_time - _POKE_STATE['silence_start_time'] > _POKE_STATE['current_silence_duration']:
                     _POKE_STATE['is_silent'] = False
                     _POKE_STATE['poke_count'] = 0  # 重置计数器（仅当解除沉默时）
@@ -149,13 +156,27 @@ class AntiPokeCommand(BaseCommand):
                     return True,"处于沉默期，直接拦截所有戳一戳消息"
 
             if not self.message.message_info.message_id == "notice":
-                return False,"非戳一戳消息，无需使用命令"
+                return True,"非戳一戳消息，无需使用命令"
 
             content = self.matched_groups.get("content") 
             target_id = self.message.message_info.user_info.user_id
+            poked_id = str(self.message.message_info.additional_config.get("target_id"))
+            self_id = config_api.get_global_config("bot.qq_account")
+            target_nickname = self.message.message_info.user_info.user_nickname
+
+            if target_id == self_id:
+                return True,"无视自己戳的"
+
+            if not poked_id == self_id: # 如果戳一戳完全与自己无关
+                if random.random() < self.FOLLOW_POKE_PROBILITY:
+                    await asyncio.sleep(3)
+                    await self.send_command("SEND_POKE",{"qq_id": poked_id},f"（戳了{target_nickname}一下）")
+                    _POKE_STATE['last_poke_back_time'] = current_time  # 更新上次反戳时间
+                    return True,"忍不住跟着戳了一下"
+                else:
+                    return True,"不是找自己的"
 
             self.start_decay_task_if_needed()
-            current_time = time.time()
             counter_lock = _get_or_create_lock()
             if counter_lock:
                 async with counter_lock:
@@ -190,20 +211,20 @@ class AntiPokeCommand(BaseCommand):
                     can_poke_back = False
                     logger.info(f"反戳冷却中，还需等待 {POKE_BACK_COOLDOWN - time_since_last_poke_back:.1f} 秒")
 
-            if random.random() < self.POKE_PROBILITY and not _POKE_STATE['is_silent'] and can_poke_back:
+            if random.random() < self.REFLECT_POKE_PROBILITY and not _POKE_STATE['is_silent'] and can_poke_back:
                 await asyncio.sleep(3)
-                await self.send_command("SEND_POKE",{"qq_id": target_id})
+                await self.send_command("SEND_POKE",{"qq_id": target_id},f"（戳了{target_nickname}一下）")
                 _POKE_STATE['last_poke_back_time'] = current_time  # 更新上次反戳时间
                 return True,"反戳一下"
             else:
-                if not can_poke_back:
+                if not can_poke_back and not _POKE_STATE['is_silent']:
                     if random.random() < 0.33:
-                        await self.generate_reply(content, suffix, target_id)
+                        await self.generate_reply(content, suffix, target_nickname)
                         return True,"选择言语回复"
                     else:
-                        return False,"不想回复"
+                        return True,"不想回复"
                 else:
-                    await self.generate_reply(content, suffix, target_id)
+                    await self.generate_reply(content, suffix, target_nickname)
                     return True,"选择言语回复"
             
         except Exception as e:
@@ -229,7 +250,8 @@ class AntiPokeCommand(BaseCommand):
                     "min_slience_counts": config_data.get("poke_value", {}).get("min_slience_counts", 5),
                     "max_slience_counts": config_data.get("poke_value", {}).get("max_slience_counts", 9),
                     "counts_decay_interval": config_data.get("poke_value", {}).get("counts_decay_interval", 180),
-                    "poke_probility": config_data.get("poke_value", {}).get("poke_probility", 0.3),
+                    "reflect_probility": config_data.get("poke_value", {}).get("reflect_probility", 0.4),
+                    "follow_probility": config_data.get("poke_value", {}).get("follow_probility", 0.3),
                 }
             }
             return config
@@ -299,11 +321,10 @@ class AntiPokeCommand(BaseCommand):
                 logger.debug("事件循环未就绪，稍后启动衰减任务")
 
 
-    async def generate_reply(self, content: str, suffix: str, target_id):
+    async def generate_reply(self, content: str, suffix: str, target_nickname):
         result_status, result_message = await generator_api.generate_reply(
                 action_data = { 
-                "raw_reply": f"{content}{suffix}",
-                "reason": "有人戳了戳你，可能是在找你，也可能是在搞怪，你需要对此做出简洁的回应",
+                "reply_to": f"{target_nickname}：{content}{suffix}(有人戳了戳你，可能是在找你，也可能是在搞怪，你需要对此做出简洁的回应)",
                 },
                 chat_stream= self.message.chat_stream
             )
