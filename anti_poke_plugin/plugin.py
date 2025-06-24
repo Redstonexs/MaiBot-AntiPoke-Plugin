@@ -25,6 +25,7 @@ _POKE_STATE = {
     'decay_task': None,
     'counter_lock': None,
     'last_poke_back_time': 0,
+    'last_poke_received_time': 0,
 }
 
 POKE_BACK_COOLDOWN = 10
@@ -61,20 +62,21 @@ class AntiPokePlugin(BasePlugin):
     # 配置Schema定义
     config_schema = {
         "plugin": {
-            "config_version": ConfigField(type=str, default="0.9.0", description="插件配置文件版本号"),
+            "config_version": ConfigField(type=str, default="0.9.7", description="插件配置文件版本号"),
             "enabled": ConfigField(type=bool, default=True, description="是否启用插件"),
         },
         "components": {
             "enable_anti_poke": ConfigField(type=bool, default=True, description="是否启用防戳插件本体组件"),
         },
         "poke_value": {
-            "min_slience_time": ConfigField(type=int, default = 120, description="戳一戳沉默的最短时间，单位为秒"),
-            "max_slience_time": ConfigField(type=int, default = 300, description="戳一戳沉默的最长时间，单位为秒"),
+            "min_slience_time": ConfigField(type=int, default = 120, description="戳一戳沉默的最短时间，单位为秒，整数"),
+            "max_slience_time": ConfigField(type=int, default = 300, description="戳一戳沉默的最长时间，单位为秒，整数"),
             "min_slience_counts": ConfigField(type=int, default = 5, description="沉默需要被戳的最小次数"),
             "max_slience_counts": ConfigField(type=int, default = 9, description="沉默需要被戳的最大次数"),
             "counts_decay_interval": ConfigField(type=int, default = 150, description="被戳次数的递减间隔，单位为秒"),
             "reflect_probility": ConfigField(type=float, default = 0.4, description="戳回去的概率，取值0到1之间任意小数。注意，不反戳就会正常回复"),
             "follow_probility": ConfigField(type=float, default = 0.3, description="跟戳的概率，取值0到1之间任意小数。"),
+            "insensitivity_duration": ConfigField(type=float, default = 4, description="钝感时长，该设置决定了麦麦的戳一戳钝感时间（无敌帧），整数"),
         },
         "logging": {
             "level": ConfigField(
@@ -135,12 +137,17 @@ class AntiPokeCommand(BaseCommand):
     @property
     def REFLECT_POKE_PROBILITY(self):
         config = self._load_config()
-        return config["poke_value"].get("reflect_probility", 0.3)
+        return config["poke_value"].get("reflect_probility", 0.4)
     
     @property
     def FOLLOW_POKE_PROBILITY(self):
         config = self._load_config()
         return config["poke_value"].get("follow_probility", 0.3)
+    
+    @property
+    def INSENSITIVITY_DURATION(self):
+        config = self._load_config()
+        return config["poke_value"].get("insensitivity_duration", 4)
 
     async def execute(self) -> Tuple[bool, Optional[str]]:
         try:
@@ -164,9 +171,6 @@ class AntiPokeCommand(BaseCommand):
             self_id = config_api.get_global_config("bot.qq_account")
             target_nickname = self.message.message_info.user_info.user_nickname
 
-            if target_id == self_id:
-                return True,"无视自己戳的"
-
             if not poked_id == self_id: # 如果戳一戳完全与自己无关
                 if random.random() < self.FOLLOW_POKE_PROBILITY:
                     await asyncio.sleep(3)
@@ -175,7 +179,12 @@ class AntiPokeCommand(BaseCommand):
                     return True,"忍不住跟着戳了一下"
                 else:
                     return True,"不是找自己的"
-
+                
+            if self._check_insensitivity_period(current_time):
+                return True, "钝感中，勿扰"
+            
+            _POKE_STATE['last_poke_received_time'] = current_time  # 更新上次接收到戳一戳的时间
+            
             self.start_decay_task_if_needed()
             counter_lock = _get_or_create_lock()
             if counter_lock:
@@ -252,6 +261,7 @@ class AntiPokeCommand(BaseCommand):
                     "counts_decay_interval": config_data.get("poke_value", {}).get("counts_decay_interval", 180),
                     "reflect_probility": config_data.get("poke_value", {}).get("reflect_probility", 0.4),
                     "follow_probility": config_data.get("poke_value", {}).get("follow_probility", 0.3),
+                    "insensitivity_duration": config_data.get("poke_value", {}).get("insensitivity_duration", 4),
                 }
             }
             return config
@@ -333,3 +343,19 @@ class AntiPokeCommand(BaseCommand):
                 data = reply_seg[1]
                 await self.send_type(message_type = "text", content = data, typing = True)
                 await asyncio.sleep(1.0)
+
+    def _check_insensitivity_period(self, current_time: float) -> bool:
+        """
+        检查是否在钝感期内（无敌帧）
+        
+        Args:
+            current_time: 当前时间戳
+            
+        Returns:
+            bool: True表示在钝感期内，应该忽略戳一戳；False表示可以响应
+        """
+        if _POKE_STATE['last_poke_received_time'] > 0:
+            time_since_last_poke = current_time - _POKE_STATE['last_poke_received_time']
+            if time_since_last_poke < self.INSENSITIVITY_DURATION:
+                return True
+        return False
