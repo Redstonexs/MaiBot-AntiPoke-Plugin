@@ -1,4 +1,5 @@
 from src.plugin_system.base.base_plugin import BasePlugin, register_plugin
+from src.plugin_system.base.base_action import BaseAction, ActionActivationType, ChatMode
 from src.plugin_system.base.config_types import ConfigField
 from src.plugin_system.base.component_types import ComponentInfo
 from src.plugin_system.base.base_command import BaseCommand
@@ -62,11 +63,12 @@ class AntiPokePlugin(BasePlugin):
     # 配置Schema定义
     config_schema = {
         "plugin": {
-            "config_version": ConfigField(type=str, default="0.9.7", description="插件配置文件版本号"),
+            "config_version": ConfigField(type=str, default="0.9.9", description="插件配置文件版本号"),
             "enabled": ConfigField(type=bool, default=True, description="是否启用插件"),
         },
         "components": {
             "enable_anti_poke": ConfigField(type=bool, default=True, description="是否启用防戳插件本体组件"),
+            "enable_may_poke": ConfigField(type=bool, default=False, description="是否启用较为主动的戳人（实验性功能）"),
         },
         "poke_value": {
             "min_slience_time": ConfigField(type=int, default = 120, description="戳一戳沉默的最短时间，单位为秒，整数"),
@@ -92,10 +94,98 @@ class AntiPokePlugin(BasePlugin):
 
         components = []
 
+        if self.get_config("components.enable_may_poke", True):
+            components.append((AntiPokeAction.get_action_info(), AntiPokeAction))
+
         if self.get_config("components.enable_anti_poke", True):
             components.append((AntiPokeCommand.get_command_info(), AntiPokeCommand))
 
         return components
+    
+class AntiPokeAction(BaseAction):
+    action_name = "may_poke"
+
+    # 双激活类型配置
+    focus_activation_type = ActionActivationType.ALWAYS
+    normal_activation_type = ActionActivationType.ALWAYS
+    activation_keywords = ["戳一戳", "戳戳","戳一下","戳我","戳了戳"]
+    keyword_case_sensitive = False
+
+     # 模式和并行控制
+    mode_enable = ChatMode.ALL
+    parallel_action = False
+
+    action_description = "根据当前聊天内容戳一戳别人" # action描述
+    action_parameters = {
+        "case": "让你决定执行这个动作的情况，必填，只能填一个参数。如果你是被对方请求戳一戳他本人，填'request'；如果你是因为想活跃气氛，开个玩笑戳他，填'joke'；如果你真的不清楚该填什么，请什么都不要填！"
+    }
+    action_require = [
+        "当用户明确请求你戳一戳他的时候，看心情使用（这意味着你可以根据自己的心情拒绝执行这个动作）",
+        "当聊天环境整体显得轻松趣味时，你可以开玩笑地使用，但最好在当前聊天话题提到戳一戳等字眼时使用",
+        "如果用户想让你去戳并非用户本人的其他人的时候，绝对不要使用！！！",
+        "使用过该动作一次后，尽量避免再度使用这个动作！！！"
+    ]
+
+    associated_types = ["text","emoji","image"] #该插件会发送的消息类型
+
+    def __init__(self,
+    action_data: dict,
+    reasoning: str,
+    cycle_timers: dict,
+    thinking_id: str,
+    global_config: Optional[dict] = None,
+    **kwargs,
+    ):
+        # 显式调用父类初始化
+        super().__init__(
+        action_data=action_data,
+        reasoning=reasoning,
+        cycle_timers=cycle_timers,
+        thinking_id=thinking_id,
+        global_config=global_config,
+        **kwargs
+    )
+
+    async def execute(self) -> Tuple[bool, str]:
+
+        current_time = time.time()
+        case = self.action_data.get("case", "joke") 
+
+        if _POKE_STATE['last_poke_back_time'] > 0:
+                time_since_last_poke_back = current_time - _POKE_STATE['last_poke_back_time']
+                if time_since_last_poke_back < POKE_BACK_COOLDOWN:
+                    return True, "戳一戳还在冷却"
+
+        _POKE_STATE['last_poke_time'] = current_time
+
+        if case == "request":
+            await asyncio.sleep(3)
+            await self.send_command("SEND_POKE",{"qq_id": self.user_id},f"（戳了{self.user_nickname}一下）")
+            await self.store_info(case)
+            return True, "应对方的要求戳了戳对方"
+        
+        elif case == "joke":
+            if random.random() < 0.4:
+                await asyncio.sleep(3)
+                await self.send_command("SEND_POKE",{"qq_id": self.user_id},f"（开玩笑地戳了{self.user_nickname}一下）")
+                await self.store_info(case)
+                return True, "开玩笑地戳了一下"
+            else:
+                return True, "决定不开玩笑"
+        else:
+            return False, "参数不对"
+        
+    async def store_info(self, case):
+        # 记录动作信息
+        if case == "request":
+            suffix = f"已经回应{self.user_nickname}的要求戳了一下TA"
+        else:
+            suffix = f"跟{self.user_nickname}开了一个玩笑，戳了一下TA"
+        await self.store_action_info(
+                action_build_into_prompt=True,
+                action_prompt_display=suffix,
+                action_done=True
+                )
 
 class AntiPokeCommand(BaseCommand):
     command_name = "anti_poke"
@@ -359,3 +449,4 @@ class AntiPokeCommand(BaseCommand):
             if time_since_last_poke < self.INSENSITIVITY_DURATION:
                 return True
         return False
+    
