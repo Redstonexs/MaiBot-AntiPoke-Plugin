@@ -63,12 +63,12 @@ class AntiPokePlugin(BasePlugin):
     # 配置Schema定义
     config_schema = {
         "plugin": {
-            "config_version": ConfigField(type=str, default="0.9.9", description="插件配置文件版本号"),
+            "config_version": ConfigField(type=str, default="1.0.1", description="插件配置文件版本号"),
             "enabled": ConfigField(type=bool, default=True, description="是否启用插件"),
         },
         "components": {
             "enable_anti_poke": ConfigField(type=bool, default=True, description="是否启用防戳插件本体组件"),
-            "enable_may_poke": ConfigField(type=bool, default=False, description="是否启用较为主动的戳人（实验性功能）"),
+            "enable_may_poke": ConfigField(type=bool, default=True, description="是否启用较为主动的戳人（实验性功能）"),
         },
         "poke_value": {
             "min_slience_time": ConfigField(type=int, default = 120, description="戳一戳沉默的最短时间，单位为秒，整数"),
@@ -261,14 +261,22 @@ class AntiPokeCommand(BaseCommand):
             self_id = config_api.get_global_config("bot.qq_account")
             target_nickname = self.message.message_info.user_info.user_nickname
 
+            # 检查是否可以反戳（新增逻辑）
+            can_poke_back = True
+            if _POKE_STATE['last_poke_back_time'] > 0:
+                time_since_last_poke_back = current_time - _POKE_STATE['last_poke_back_time']
+                if time_since_last_poke_back < POKE_BACK_COOLDOWN:
+                    can_poke_back = False
+                    logger.info(f"戳一戳冷却中，还需等待 {POKE_BACK_COOLDOWN - time_since_last_poke_back:.1f} 秒")
+
             if not poked_id == self_id: # 如果戳一戳完全与自己无关
                 if random.random() < self.FOLLOW_POKE_PROBILITY:
                     await asyncio.sleep(3)
                     await self.send_command("SEND_POKE",{"qq_id": poked_id},f"（戳了{target_nickname}一下）")
-                    _POKE_STATE['last_poke_back_time'] = current_time  # 更新上次反戳时间
+                    _POKE_STATE['last_poke_back_time'] = current_time  # 更新上次戳一戳时间
                     return True,"忍不住跟着戳了一下"
                 else:
-                    return True,"不是找自己的"
+                    return True,"不是找自己的，也不打算跟戳"
                 
             if self._check_insensitivity_period(current_time):
                 return True, "钝感中，勿扰"
@@ -282,7 +290,7 @@ class AntiPokeCommand(BaseCommand):
                     _POKE_STATE['last_poke_time'] = current_time
                     _POKE_STATE['poke_count'] += 1
             else:
-                # 如果无法获取锁，直接更新（降级处理）
+            # 如果无法获取锁，直接更新（降级处理）
                 _POKE_STATE['last_poke_time'] = current_time
                 _POKE_STATE['poke_count'] += 1
 
@@ -293,27 +301,19 @@ class AntiPokeCommand(BaseCommand):
             if _POKE_STATE['poke_count'] >= _POKE_STATE['current_poke_threshold']:
                 suffix = "（请一定要回答类似于“哼，我不理你了”的话语以表示对过多戳一戳的抗议）"
 
-                # 触发沉默机制
+            # 触发沉默机制
                 _POKE_STATE['is_silent'] = True
                 _POKE_STATE['silence_start_time'] = time.time()
                 logger.info(f"触发沉默机制，戳戳次数: {_POKE_STATE['poke_count']}/{_POKE_STATE['current_poke_threshold']}, 沉默时长: {_POKE_STATE['current_silence_duration']}秒")
-                # 为下次沉默生成新的随机参数 
+            # 为下次沉默生成新的随机参数 
                 self.generate_random_silence_params()
             else:
                 suffix = "（这是QQ的一个功能，用于提及某人，但没那么明显）"
 
-                # 检查是否可以反戳（新增逻辑）
-            can_poke_back = True
-            if _POKE_STATE['last_poke_back_time'] > 0:
-                time_since_last_poke_back = current_time - _POKE_STATE['last_poke_back_time']
-                if time_since_last_poke_back < POKE_BACK_COOLDOWN:
-                    can_poke_back = False
-                    logger.info(f"反戳冷却中，还需等待 {POKE_BACK_COOLDOWN - time_since_last_poke_back:.1f} 秒")
-
             if random.random() < self.REFLECT_POKE_PROBILITY and not _POKE_STATE['is_silent'] and can_poke_back:
                 await asyncio.sleep(3)
                 await self.send_command("SEND_POKE",{"qq_id": target_id},f"（戳了{target_nickname}一下）")
-                _POKE_STATE['last_poke_back_time'] = current_time  # 更新上次反戳时间
+                _POKE_STATE['last_poke_back_time'] = current_time  # 更新上次戳一戳时间
                 return True,"反戳一下"
             else:
                 if not can_poke_back and not _POKE_STATE['is_silent']:
