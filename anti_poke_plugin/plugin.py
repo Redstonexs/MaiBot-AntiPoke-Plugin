@@ -3,8 +3,8 @@ from src.plugin_system.base.base_action import BaseAction, ActionActivationType,
 from src.plugin_system.base.config_types import ConfigField
 from src.plugin_system.base.component_types import ComponentInfo
 from src.plugin_system.base.base_command import BaseCommand
-from src.plugin_system.apis import generator_api
-from src.plugin_system.apis import config_api
+from src.plugin_system.apis import generator_api, config_api, database_api
+from src.common.database.database_model import PersonInfo
 from src.common.logger import get_logger
 from typing import Tuple, Optional, Dict, Any, List, Type
 import random
@@ -63,7 +63,7 @@ class AntiPokePlugin(BasePlugin):
     # 配置Schema定义
     config_schema = {
         "plugin": {
-            "config_version": ConfigField(type=str, default="1.0.1", description="插件配置文件版本号"),
+            "config_version": ConfigField(type=str, default="1.1.1", description="插件配置文件版本号"),
             "enabled": ConfigField(type=bool, default=True, description="是否启用插件"),
         },
         "components": {
@@ -117,7 +117,8 @@ class AntiPokeAction(BaseAction):
 
     action_description = "根据当前聊天内容戳一戳别人" # action描述
     action_parameters = {
-        "case": "让你决定执行这个动作的情况，必填，只能填一个参数。如果你是被对方请求戳一戳他本人，填'request'；如果你是因为想活跃气氛，开个玩笑戳他，填'joke'；如果你真的不清楚该填什么，请什么都不要填！"
+        "case": "让你决定执行这个动作的情况，必填，只能填一个参数。如果你是被对方请求戳一戳他本人，填'request'；如果你是因为想活跃气氛，开个玩笑戳他，填'joke'；如果你真的不清楚该填什么，请什么都不要填！",
+        "target_name": "要戳的人的名字，必填"
     }
     action_require = [
         "当用户明确请求你戳一戳他的时候，看心情使用（这意味着你可以根据自己的心情拒绝执行这个动作）",
@@ -147,6 +148,19 @@ class AntiPokeAction(BaseAction):
     )
 
     async def execute(self) -> Tuple[bool, str]:
+
+        if not self.user_id:
+            target_name = self.action_data.get("target_name", "")
+            personinfo = await database_api.db_get(
+            PersonInfo,
+            filters={"person_name": f"{target_name}"},
+            limit=1
+            )
+            if personinfo:
+                self.user_id = personinfo['user_id']
+                self.user_nickname = personinfo['nickname']
+            if not self.user_id:
+                return False, "无法获取被戳用户的ID"
 
         current_time = time.time()
         case = self.action_data.get("case", "joke") 
@@ -449,4 +463,3 @@ class AntiPokeCommand(BaseCommand):
             if time_since_last_poke < self.INSENSITIVITY_DURATION:
                 return True
         return False
-    
