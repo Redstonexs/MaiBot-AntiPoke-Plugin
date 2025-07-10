@@ -63,7 +63,7 @@ class AntiPokePlugin(BasePlugin):
     # 配置Schema定义
     config_schema = {
         "plugin": {
-            "config_version": ConfigField(type=str, default="1.1.1", description="插件配置文件版本号"),
+            "config_version": ConfigField(type=str, default="1.1.2", description="插件配置文件版本号"),
             "enabled": ConfigField(type=bool, default=True, description="是否启用插件"),
         },
         "components": {
@@ -71,13 +71,13 @@ class AntiPokePlugin(BasePlugin):
             "enable_may_poke": ConfigField(type=bool, default=True, description="是否启用较为主动的戳人（实验性功能）"),
         },
         "poke_value": {
-            "min_slience_time": ConfigField(type=int, default = 120, description="戳一戳沉默的最短时间，单位为秒，整数"),
-            "max_slience_time": ConfigField(type=int, default = 300, description="戳一戳沉默的最长时间，单位为秒，整数"),
-            "min_slience_counts": ConfigField(type=int, default = 5, description="沉默需要被戳的最小次数"),
-            "max_slience_counts": ConfigField(type=int, default = 9, description="沉默需要被戳的最大次数"),
+            "min_silence_time": ConfigField(type=int, default = 120, description="戳一戳沉默的最短时间，单位为秒，整数"),
+            "max_silence_time": ConfigField(type=int, default = 300, description="戳一戳沉默的最长时间，单位为秒，整数"),
+            "min_silence_counts": ConfigField(type=int, default = 5, description="沉默需要被戳的最小次数"),
+            "max_silence_counts": ConfigField(type=int, default = 9, description="沉默需要被戳的最大次数"),
             "counts_decay_interval": ConfigField(type=int, default = 150, description="被戳次数的递减间隔，单位为秒"),
-            "reflect_probility": ConfigField(type=float, default = 0.4, description="戳回去的概率，取值0到1之间任意小数。注意，不反戳就会正常回复"),
-            "follow_probility": ConfigField(type=float, default = 0.3, description="跟戳的概率，取值0到1之间任意小数。"),
+            "reflect_probability": ConfigField(type=float, default = 0.4, description="戳回去的概率，取值0到1之间任意小数。注意，不反戳就会正常回复"),
+            "follow_probability": ConfigField(type=float, default = 0.3, description="跟戳的概率，取值0到1之间任意小数。"),
             "insensitivity_duration": ConfigField(type=float, default = 4, description="钝感时长，该设置决定了麦麦的戳一戳钝感时间（无敌帧），整数"),
         },
         "logging": {
@@ -216,22 +216,22 @@ class AntiPokeCommand(BaseCommand):
     @property
     def SILENCE_DURATION_MIN(self):
         config = self._load_config()
-        return config["poke_value"].get("min_slience_time", 120)
+        return config["poke_value"].get("min_silence_time", 120)
 
     @property
     def SILENCE_DURATION_MAX(self):
         config = self._load_config()
-        return config["poke_value"].get("max_slience_time", 300)
+        return config["poke_value"].get("max_silence_time", 300)
 
     @property
     def POKE_COUNT_MIN(self):
         config = self._load_config()
-        return config["poke_value"].get("min_slience_counts", 5)
+        return config["poke_value"].get("min_silence_counts", 5)
 
     @property
     def POKE_COUNT_MAX(self):
         config = self._load_config()
-        return config["poke_value"].get("max_slience_counts", 9)
+        return config["poke_value"].get("max_silence_counts", 9)
 
     @property
     def DECAY_INTERVAL(self):
@@ -239,14 +239,14 @@ class AntiPokeCommand(BaseCommand):
         return config["poke_value"].get("counts_decay_interval", 180)
     
     @property
-    def REFLECT_POKE_PROBILITY(self):
+    def REFLECT_POKE_PROBABILITY(self):
         config = self._load_config()
-        return config["poke_value"].get("reflect_probility", 0.4)
+        return config["poke_value"].get("reflect_probability", 0.4)
     
     @property
-    def FOLLOW_POKE_PROBILITY(self):
+    def FOLLOW_POKE_PROBABILITY(self):
         config = self._load_config()
-        return config["poke_value"].get("follow_probility", 0.3)
+        return config["poke_value"].get("follow_probability", 0.3)
     
     @property
     def INSENSITIVITY_DURATION(self):
@@ -284,7 +284,7 @@ class AntiPokeCommand(BaseCommand):
                     logger.info(f"戳一戳冷却中，还需等待 {POKE_BACK_COOLDOWN - time_since_last_poke_back:.1f} 秒")
 
             if not poked_id == self_id: # 如果戳一戳完全与自己无关
-                if random.random() < self.FOLLOW_POKE_PROBILITY:
+                if random.random() < self.FOLLOW_POKE_PROBABILITY:
                     await asyncio.sleep(3)
                     await self.send_command("SEND_POKE",{"qq_id": poked_id},f"（戳了{target_nickname}一下）")
                     _POKE_STATE['last_poke_back_time'] = current_time  # 更新上次戳一戳时间
@@ -324,7 +324,7 @@ class AntiPokeCommand(BaseCommand):
             else:
                 suffix = "（这是QQ的一个功能，用于提及某人，但没那么明显）"
 
-            if random.random() < self.REFLECT_POKE_PROBILITY and not _POKE_STATE['is_silent'] and can_poke_back:
+            if random.random() < self.REFLECT_POKE_PROBABILITY and not _POKE_STATE['is_silent'] and can_poke_back:
                 await asyncio.sleep(3)
                 await self.send_command("SEND_POKE",{"qq_id": target_id},f"（戳了{target_nickname}一下）")
                 _POKE_STATE['last_poke_back_time'] = current_time  # 更新上次戳一戳时间
@@ -358,13 +358,13 @@ class AntiPokeCommand(BaseCommand):
             # 构建配置字典，使用get方法安全访问嵌套值
             config = {
                 "poke_value": {
-                    "min_slience_time": config_data.get("poke_value", {}).get("min_slience_time", 120),
-                    "max_slience_time": config_data.get("poke_value", {}).get("max_slience_time", 300),
-                    "min_slience_counts": config_data.get("poke_value", {}).get("min_slience_counts", 5),
-                    "max_slience_counts": config_data.get("poke_value", {}).get("max_slience_counts", 9),
+                    "min_silence_time": config_data.get("poke_value", {}).get("min_silence_time", 120),
+                    "max_silence_time": config_data.get("poke_value", {}).get("max_silence_time", 300),
+                    "min_silence_counts": config_data.get("poke_value", {}).get("min_silence_counts", 5),
+                    "max_silence_counts": config_data.get("poke_value", {}).get("max_silence_counts", 9),
                     "counts_decay_interval": config_data.get("poke_value", {}).get("counts_decay_interval", 180),
-                    "reflect_probility": config_data.get("poke_value", {}).get("reflect_probility", 0.4),
-                    "follow_probility": config_data.get("poke_value", {}).get("follow_probility", 0.3),
+                    "reflect_probability": config_data.get("poke_value", {}).get("reflect_probability", 0.4),
+                    "follow_probability": config_data.get("poke_value", {}).get("follow_probability", 0.3),
                     "insensitivity_duration": config_data.get("poke_value", {}).get("insensitivity_duration", 4),
                 }
             }
