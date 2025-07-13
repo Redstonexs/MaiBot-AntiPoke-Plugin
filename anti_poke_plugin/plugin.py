@@ -1,4 +1,5 @@
-from src.plugin_system.base.base_plugin import BasePlugin, register_plugin
+from src.plugin_system.base.base_plugin import BasePlugin
+from src.plugin_system.apis.plugin_register_api import register_plugin
 from src.plugin_system.base.base_action import BaseAction, ActionActivationType, ChatMode
 from src.plugin_system.base.config_types import ConfigField
 from src.plugin_system.base.component_types import ComponentInfo
@@ -51,6 +52,8 @@ class AntiPokePlugin(BasePlugin):
     plugin_name = "anti_poke_plugin"
     enable_plugin = True
     config_file_name = "config.toml"
+    dependencies = []
+    python_dependencies = []
 
     # 配置节描述
     config_section_descriptions = {
@@ -63,7 +66,7 @@ class AntiPokePlugin(BasePlugin):
     # 配置Schema定义
     config_schema = {
         "plugin": {
-            "config_version": ConfigField(type=str, default="1.1.2", description="插件配置文件版本号"),
+            "config_version": ConfigField(type=str, default="1.2.0", description="插件配置文件版本号"),
             "enabled": ConfigField(type=bool, default=True, description="是否启用插件"),
         },
         "components": {
