@@ -439,7 +439,7 @@ class AntiPokeCommand(BaseCommand):
 
 
     async def generate_reply(self, content: str, suffix: str, target_nickname):
-        result_status, result_message = await generator_api.generate_reply(
+        result_status, result_message, _ = await generator_api.generate_reply(
                 action_data = { 
                 "reply_to": f"{target_nickname}：{content}{suffix}(有人戳了戳你，可能是在找你，也可能是在搞怪，你需要对此做出简洁的回应)",
                 },
