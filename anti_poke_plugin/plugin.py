@@ -6,6 +6,7 @@ from src.plugin_system.base.component_types import ComponentInfo
 from src.plugin_system.base.base_command import BaseCommand
 from src.plugin_system.apis import generator_api, config_api, database_api
 from src.common.database.database_model import PersonInfo
+from src.person_info.person_info import get_person_info_manager
 from src.common.logger import get_logger
 from typing import Tuple, Optional, Dict, Any, List, Type
 import random
@@ -66,7 +67,7 @@ class AntiPokePlugin(BasePlugin):
     # 配置Schema定义
     config_schema = {
         "plugin": {
-            "config_version": ConfigField(type=str, default="1.2.0", description="插件配置文件版本号"),
+            "config_version": ConfigField(type=str, default="1.2.2", description="插件配置文件版本号"),
             "enabled": ConfigField(type=bool, default=True, description="是否启用插件"),
         },
         "components": {
@@ -276,7 +277,7 @@ class AntiPokeCommand(BaseCommand):
             target_id = self.message.message_info.user_info.user_id
             poked_id = str(self.message.message_info.additional_config.get("target_id"))
             self_id = config_api.get_global_config("bot.qq_account")
-            target_nickname = self.message.message_info.user_info.user_nickname
+            target_nickname = await get_person_info_manager().get_value(target_id, "person_name")
 
             # 检查是否可以反戳（新增逻辑）
             can_poke_back = True
