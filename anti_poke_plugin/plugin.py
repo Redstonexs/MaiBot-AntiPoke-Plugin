@@ -67,7 +67,7 @@ class AntiPokePlugin(BasePlugin):
     # 配置Schema定义
     config_schema = {
         "plugin": {
-            "config_version": ConfigField(type=str, default="1.2.2", description="插件配置文件版本号"),
+            "config_version": ConfigField(type=str, default="1.3.0", description="插件配置文件版本号"),
             "enabled": ConfigField(type=bool, default=True, description="是否启用插件"),
         },
         "components": {
@@ -268,10 +268,10 @@ class AntiPokeCommand(BaseCommand):
                 else:
                     # 沉默期直接忽略所有通知
                     logger.info("当前处于沉默期，忽略戳一戳")
-                    return True,"处于沉默期，直接拦截所有戳一戳消息"
+                    return True,"处于沉默期，直接拦截所有戳一戳消息", True
 
             if not self.message.message_info.message_id == "notice":
-                return True,"非戳一戳消息，无需使用命令"
+                return True,"非戳一戳消息，无需使用命令", True
 
             content = self.matched_groups.get("content") 
             target_id = self.message.message_info.user_info.user_id
@@ -292,12 +292,12 @@ class AntiPokeCommand(BaseCommand):
                     await asyncio.sleep(3)
                     await self.send_command("SEND_POKE",{"qq_id": poked_id},f"（戳了{target_nickname}一下）")
                     _POKE_STATE['last_poke_back_time'] = current_time  # 更新上次戳一戳时间
-                    return True,"忍不住跟着戳了一下"
+                    return True,"忍不住跟着戳了一下", True
                 else:
-                    return True,"不是找自己的，也不打算跟戳"
+                    return True,"不是找自己的，也不打算跟戳", True
                 
             if self._check_insensitivity_period(current_time):
-                return True, "钝感中，勿扰"
+                return True, "钝感中，勿扰", True
             
             _POKE_STATE['last_poke_received_time'] = current_time  # 更新上次接收到戳一戳的时间
             
@@ -332,21 +332,21 @@ class AntiPokeCommand(BaseCommand):
                 await asyncio.sleep(3)
                 await self.send_command("SEND_POKE",{"qq_id": target_id},f"（戳了{target_nickname}一下）")
                 _POKE_STATE['last_poke_back_time'] = current_time  # 更新上次戳一戳时间
-                return True,"反戳一下"
+                return True,"反戳一下", True
             else:
                 if not can_poke_back and not _POKE_STATE['is_silent']:
                     if random.random() < 0.33:
                         await self.generate_reply(content, suffix, target_nickname)
-                        return True,"选择言语回复"
+                        return True,"选择言语回复", True
                     else:
-                        return True,"不想回复"
+                        return True,"不想回复", True
                 else:
                     await self.generate_reply(content, suffix, target_nickname)
-                    return True,"选择言语回复"
+                    return True,"选择言语回复", True
             
         except Exception as e:
             logger.error(f"{self.log_prefix} 执行错误: {e}")
-            return False, f"执行失败: {str(e)}"
+            return False, f"执行失败: {str(e)}", True
         
     def _load_config(self) -> Dict[str, Any]:
         """从同级目录的config.toml文件直接加载配置"""
