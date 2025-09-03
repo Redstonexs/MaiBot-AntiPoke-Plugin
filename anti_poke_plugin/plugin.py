@@ -151,47 +151,46 @@ class AntiPokeAction(BaseAction):
         **kwargs
     )
 
-    async def execute(self) -> Tuple[bool, str]:
-
+    async def execute(self) -> Tuple[bool, str, Any]:
         if not self.user_id:
             target_name = self.action_data.get("target_name", "")
             personinfo = await database_api.db_get(
-            PersonInfo,
-            filters={"person_name": f"{target_name}"},
-            limit=1
+                PersonInfo,
+                filters={"person_name": f"{target_name}"},
+                limit=1
             )
             if personinfo:
                 self.user_id = personinfo['user_id']
                 self.user_nickname = personinfo['nickname']
             if not self.user_id:
-                return False, "无法获取被戳用户的ID"
+                return False, "无法获取被戳用户的ID", True
 
         current_time = time.time()
         case = self.action_data.get("case", "joke") 
 
         if _POKE_STATE['last_poke_back_time'] > 0:
-                time_since_last_poke_back = current_time - _POKE_STATE['last_poke_back_time']
-                if time_since_last_poke_back < POKE_BACK_COOLDOWN:
-                    return True, "戳一戳还在冷却"
+            time_since_last_poke_back = current_time - _POKE_STATE['last_poke_back_time']
+            if time_since_last_poke_back < POKE_BACK_COOLDOWN:
+                return True, "戳一戳还在冷却", True
 
         _POKE_STATE['last_poke_time'] = current_time
 
         if case == "request":
             await asyncio.sleep(3)
-            await self.send_command("SEND_POKE",{"qq_id": self.user_id},f"（戳了{self.user_nickname}一下）")
+            await self.send_command("SEND_POKE", {"qq_id": self.user_id}, f"（戳了{self.user_nickname}一下）")
             await self.store_info(case)
-            return True, "应对方的要求戳了戳对方"
-        
+            return True, "应对方的要求戳了戳对方", True
+
         elif case == "joke":
             if random.random() < 0.4:
                 await asyncio.sleep(3)
-                await self.send_command("SEND_POKE",{"qq_id": self.user_id},f"（开玩笑地戳了{self.user_nickname}一下）")
+                await self.send_command("SEND_POKE", {"qq_id": self.user_id}, f"（开玩笑地戳了{self.user_nickname}一下）")
                 await self.store_info(case)
-                return True, "开玩笑地戳了一下"
+                return True, "开玩笑地戳了一下", True
             else:
-                return True, "决定不开玩笑"
+                return True, "决定不开玩笑", True
         else:
-            return False, "参数不对"
+            return False, "参数不对", True
         
     async def store_info(self, case):
         # 记录动作信息
@@ -468,4 +467,5 @@ class AntiPokeCommand(BaseCommand):
                 return True
 
         return False
+
 
