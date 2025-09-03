@@ -6,7 +6,7 @@ from src.plugin_system.base.component_types import ComponentInfo, ChatMode, Acti
 from src.plugin_system.base.base_command import BaseCommand
 from src.plugin_system.apis import generator_api, config_api, database_api
 from src.common.database.database_model import PersonInfo
-from src.person_info.person_info import get_person_info_manager
+from src.plugin_system.apis import person_api
 from src.common.logger import get_logger
 from typing import Tuple, Optional, Dict, Any, List, Type
 import random
@@ -277,7 +277,7 @@ class AntiPokeCommand(BaseCommand):
             target_id = self.message.message_info.user_info.user_id
             poked_id = str(self.message.message_info.additional_config.get("target_id"))
             self_id = config_api.get_global_config("bot.qq_account")
-            target_nickname = await get_person_info_manager().get_value(target_id, "person_name")
+            target_nickname = await person_api.get_person_value(target_id, "person_name")
 
             # 检查是否可以反戳（新增逻辑）
             can_poke_back = True
@@ -468,3 +468,4 @@ class AntiPokeCommand(BaseCommand):
                 return True
 
         return False
+
