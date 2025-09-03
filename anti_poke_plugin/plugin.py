@@ -440,17 +440,16 @@ class AntiPokeCommand(BaseCommand):
 
 
     async def generate_reply(self, content: str, suffix: str, target_nickname):
-        result_status, result_message, _ = await generator_api.generate_reply(
-                action_data = { 
+        result_status, result_message = await generator_api.generate_reply(
+            action_data = { 
                 "reply_to": f"{target_nickname}：{content}{suffix}(有人戳了戳你，可能是在找你，也可能是在搞怪，你需要对此做出简洁的回应)",
-                },
-                chat_stream= self.message.chat_stream
-            )
-        if result_status:
-            for reply_seg in result_message:
-                data = reply_seg[1]
-                await self.send_type(message_type = "text", content = data, typing = True)
-                await asyncio.sleep(1.0)
+            },
+            chat_stream= self.message.chat_stream
+        )
+        if result_status and result_message:
+            # 这里根据 result_message 的类型处理
+            await self.send_type(message_type = "text", content = str(result_message), typing = True)
+            await asyncio.sleep(1.0)
 
     def _check_insensitivity_period(self, current_time: float) -> bool:
         """
