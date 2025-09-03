@@ -1,8 +1,8 @@
 from src.plugin_system.base.base_plugin import BasePlugin
 from src.plugin_system.apis.plugin_register_api import register_plugin
-from src.plugin_system.base.base_action import BaseAction, ActionActivationType, ChatMode
+from src.plugin_system.base.base_action import BaseAction
 from src.plugin_system.base.config_types import ConfigField
-from src.plugin_system.base.component_types import ComponentInfo
+from src.plugin_system.base.component_types import ComponentInfo, ChatMode, ActionActivationType
 from src.plugin_system.base.base_command import BaseCommand
 from src.plugin_system.apis import generator_api, config_api, database_api
 from src.common.database.database_model import PersonInfo
@@ -466,4 +466,5 @@ class AntiPokeCommand(BaseCommand):
             time_since_last_poke = current_time - _POKE_STATE['last_poke_received_time']
             if time_since_last_poke < self.INSENSITIVITY_DURATION:
                 return True
+
         return False
